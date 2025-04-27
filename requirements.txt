@@ -1,0 +1,8 @@
+numpy
+pandas
+matplotlib
+requests
+scikit-learn
+xgboost
+catboost
+ipykernel
