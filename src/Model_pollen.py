@@ -96,20 +96,23 @@ class Model_poll:
             print("RMSE:", root_mean_squared_error(y_test, y_pred))
             print("MSE:", mean_squared_error(y_test, y_pred))
 
-    def __init__(self, path_to_weater: str, path_to_pollen: str, s1: str=",", s2: str=","):
-        self.data_weater = pd.read_csv(path_to_weater, sep=s1)
-        self.data_pollen = pd.read_csv(path_to_pollen, sep=s2)
+    def __init__(self, data: str):
+        # self.data_weater = pd.read_csv(path_to_weater, sep=s1)
+        # self.data_pollen = pd.read_csv(path_to_pollen, sep=s2)
+        self.data = data
         self.X_train = ...
         self.y_train = ...
         self.X_test = ...
         self.y_test = ...
         self.model = ...
     
-    def learn_xgb_model(self, merged_data: pd.DataFrame,
-                        train_years: list=[2017, 2019, 2020, 2021, 2023],
+    def learn_xgb_model(self, train_years: list=[2017, 2019, 2020, 2021, 2023],
                         test_year: int = 2022) -> None:
-        xgboost_data = merged_data.copy()
-
+        xgboost_data = self.data.copy()
+        xgboost_data['date'] = pd.to_datetime(xgboost_data['date'])
+        xgboost_data = xgboost_data.set_index("date")
+        # xgboost_data.reset_index()
+    
         for lag in [1, 2, 3, 7]:
             xgboost_data[f"pollen_lag_{lag}"] = xgboost_data["concentration"].shift(lag)
             xgboost_data[f"temp_mean_lag_{lag}"] = xgboost_data["temp_mean"].shift(lag)
@@ -280,7 +283,7 @@ class Model_poll:
 
         return final_preds.reindex(test_data.index).fillna(0)
 
-    def get_predict(self) -> predict:   # TODO: fix description
+    def get_predict(self):
         return self.model.predict(self.X_test)
     
     def show_result(self, preds) -> None:
