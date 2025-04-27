@@ -11,6 +11,11 @@ from catboost import CatBoostClassifier
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import RandomizedSearchCV
 
+
+# TODO: test
+# TODO: write documentation
+# TODO: adapt for short actual prediction (for a week)
+""" ~_~ """
 class Model_poll:
     class Tools:
         def get_weater(name: str, start: str, end: str, 
@@ -124,7 +129,7 @@ class Model_poll:
         X = xgboost_data.drop("concentration", axis=1)
         y = xgboost_data["concentration"]
 
-        self.X_train = xgboost_data[train_mask].drop("concentration", axis=1) # вероятно стоит убрать таки
+        self.X_train = xgboost_data[train_mask].drop("concentration", axis=1) # TODO: think about that
         self.y_train = xgboost_data[train_mask]["concentration"]
         self.X_test = xgboost_data[test_mask].drop("concentration", axis=1)
         self.y_test = xgboost_data[test_mask]["concentration"]
@@ -265,7 +270,7 @@ class Model_poll:
         test_data['predicted_season'] = clf.predict(test_data[classifier_features])
 
         X_test_reg = test_data[test_data['predicted_season'] == 1][regression_features]
-        y_test_reg = test_data[test_data['predicted_season'] == 1]['concentration']
+        y_test_reg = test_data[test_data['predicted_season'] == 1]['concentration']         # TODO: write into class field 
 
         if len(X_test_reg) > 0:
             test_preds = best_reg.predict(X_test_reg)
@@ -275,7 +280,7 @@ class Model_poll:
 
         return final_preds.reindex(test_data.index).fillna(0)
 
-    def get_predict(self) -> predict:
+    def get_predict(self) -> predict:   # TODO: fix description
         return self.model.predict(self.X_test)
     
     def show_result(self, preds) -> None:
