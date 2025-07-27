@@ -1,4 +1,5 @@
 import joblib
+import random
 import requests
 import numpy as np
 import pandas as pd
@@ -16,7 +17,6 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import (
     TimeSeriesSplit,
-    train_test_split,
     RandomizedSearchCV,
 )
 
@@ -380,55 +380,50 @@ class PollenModel:
                 df = df.join(self.concentration, how="left").fillna(0)
                 return df
 
-        class TrainValidationTest(BaseEstimator, TransformerMixin):
-            def __init__(self, test_size=0.2, random_state=21):
-                self.test_size = test_size
-                self.random_state = random_state
+        class StandardScalerFeature(BaseEstimator, TransformerMixin):
+            def __init__(self, feature_list: list[str]):
+                self.feature_list = feature_list
+                self.scaler = ...
 
-            def fit(self, X, y):
-                X_train_valid, X_test, y_train_valid, y_test = train_test_split(
-                    X, y,
-                    test_size=self.test_size,
-                    random_state=self.random_state,
-                    stratify=y
-                )
-                
-                valid_size = self.test_size / (1 - self.test_size)
-                X_train, X_valid, y_train, y_valid = train_test_split(
-                    X_train_valid, y_train_valid,
-                    test_size=valid_size,
-                    random_state=self.random_state,
-                    stratify=y_train_valid
-                )
+            def fit(self, X: pd.DataFrame, y=None):
+                self.scaler = StandardScaler().fit(X[self.feature_list])
+                return self
+            
+            def transform(self, X: pd.DataFrame):
+                df = X.copy()
+                df[self.feature_list] = self.scaler.transform(X[self.feature_list])
+                return df
+
+        class TrainValidationTest(BaseEstimator, TransformerMixin):
+            def __init__(self, time_series: list[int], test_years: list[int], valid_years: int = 1):
+                """
+                all years in test_years must be in time_series
+                valid_years - num years for validation data
+                """
+                self.time_series = time_series
+                self.test_years = test_years
+                self.valid_years = valid_years
+
+            """
+            Split data by years on train, valid, test
+            """
+            def fit(self, X: pd.DataFrame, y):
+                # TODO: check input 
+                X_test = X[X['data'].dt.year.isin(self.test_years)]
+                valid_years = random.sample(self.time_series, self.valid_years)
+                X_valid = X[X['data'].dt.year.isin(valid_years)]
+                X_train = X[~X['data'].dt.year.isin(valid_years + self.test_years)]
+                y_test = y.loc[X_test.index]
+                y_train = y.loc[X_train.index]
+                y_valid = y.loc[X_valid.index]
 
                 return X_train, X_valid, X_test, y_train, y_valid, y_test
 
-    class FitModel:
-        # TODO: fit Classifier
-        # TODO: fit Regressor
-        class CatBoostFit:
-            def __init__(self, model):
-                self.model = model
-
-            def fit(self, X, y):
-                return self
-
-            def predict(self, X):
-                pass
-        
-        class RGBoostFit:
-            def __init__(self, model):
-                self.model = model
-
-            def fit(self, X, y):
-                return self
-
-            def predict(self, X):
-                pass
-
     class ModelSelection:
         # TODO: write crosval selection
-        pass
+        def __init__(grids, ):
+            pass
+        
 
     class Finalize:
         def __init__(self, estimator):
