@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import matplotlib.pyplot as plt
+from tqdm.notebook import tqdm
+from contextlib import contextmanager
 from catboost import CatBoostClassifier
 from sklearn.base import BaseEstimator
 from sklearn.base import TransformerMixin
@@ -18,6 +20,8 @@ from sklearn.metrics import (
 from sklearn.model_selection import (
     TimeSeriesSplit,
     RandomizedSearchCV,
+    GridSearchCV,
+    ParameterGrid,
 )
 
 
@@ -25,7 +29,6 @@ from sklearn.model_selection import (
 # TODO: write documentation
 # TODO: adapt for short actual prediction (for a week)
 # TODO: rewrite with piplines and trnasformers
-# TODO: add into pipline standard scaler
 """ ~_~ """
 class Model_poll:
     def __init__(self, data: str):
@@ -381,8 +384,9 @@ class PollenModel:
                 return df
 
         class StandardScalerFeature(BaseEstimator, TransformerMixin):
-            def __init__(self, feature_list: list[str]):
+            def __init__(self, feature_list: list[str], target_column: str):
                 self.feature_list = feature_list
+                self.target_column = target_column
                 self.scaler = ...
 
             def fit(self, X: pd.DataFrame, y=None):
@@ -391,11 +395,14 @@ class PollenModel:
             
             def transform(self, X: pd.DataFrame):
                 df = X.copy()
+                y = df.pop(self.target_column)
+
                 df[self.feature_list] = self.scaler.transform(X[self.feature_list])
-                return df
+                return df, y
 
         class TrainValidationTest(BaseEstimator, TransformerMixin):
-            def __init__(self, time_series: list[int], test_years: list[int], valid_years: int = 1):
+            def __init__(self, time_series: list[int], test_years: list[int],
+                         valid_years: int = 1, random_state: int|None = None):
                 """
                 all years in test_years must be in time_series
                 valid_years - num years for validation data
@@ -403,27 +410,98 @@ class PollenModel:
                 self.time_series = time_series
                 self.test_years = test_years
                 self.valid_years = valid_years
+                self.random_state = random_state
 
             """
             Split data by years on train, valid, test
             """
             def fit(self, X: pd.DataFrame, y):
                 # TODO: check input 
-                X_test = X[X['data'].dt.year.isin(self.test_years)]
+                X_test = X[X['date'].dt.year.isin(self.test_years)]
+                random.seed(self.random_state)
                 valid_years = random.sample(self.time_series, self.valid_years)
-                X_valid = X[X['data'].dt.year.isin(valid_years)]
-                X_train = X[~X['data'].dt.year.isin(valid_years + self.test_years)]
+                X_valid = X[X['date'].dt.year.isin(valid_years)]
+                X_train = X[~X['date'].dt.year.isin(valid_years + self.test_years)]
                 y_test = y.loc[X_test.index]
                 y_train = y.loc[X_train.index]
                 y_valid = y.loc[X_valid.index]
+
+                X_test['date'] = X_test['date'].astype('int64') // 10**9
+                X_valid['date'] = X_valid['date'].astype('int64') // 10**9
+                X_train['date'] = X_train['date'].astype('int64') // 10**9
 
                 return X_train, X_valid, X_test, y_train, y_valid, y_test
 
     class ModelSelection:
         # TODO: write crosval selection
-        def __init__(grids, ):
+        def __init__(self, score_func, grids_params_xgboost: dict,
+                     grids_params_catoost: dict|None=None,
+                     tgdm: bool=False):
+            """
+            score_func - function object
+            """
+            self.grids_params_xgboost = grids_params_xgboost
+            self.grids_params_catoost = grids_params_catoost
+            self.tgdm = tgdm
+            self.results = []
+            self.score_func = score_func
+
+        @staticmethod
+        @contextmanager
+        def tqdm_joblib(tqdm_object):
+            def tqdm_print_progress(self):
+                if self.n_completed_tasks > tqdm_object.n:
+                    n_completed = self.n_completed_tasks - tqdm_object.n
+                    tqdm_object.update(n=n_completed)
+            
+            original_print_progress = joblib.parallel.Parallel.print_progress
+            joblib.parallel.Parallel.print_progress = tqdm_print_progress
+            
+            try:
+                yield
+            finally:
+                joblib.parallel.Parallel.print_progress = original_print_progress
+                tqdm_object.close()
+
+        def choose(self, X_train: pd.DataFrame, y_train: pd.Series, X_valid: pd.DataFrame, y_valid: pd.Series):
+            # TODO: fix problem with scores
+            if self.grids_params_catoost != None:
+                self.__choose_best_classifiear(X_train, y_train, X_valid, y_valid)
+                X_train, y_train, X_valid, y_valid = self.__extend_data()           # TODO: how return hybrid model?
+            return self.__choose_best_regressor(X_train, y_train, X_valid, y_valid) # TODO: fix it for hybrid model
+
+        def __choose_best_classifiear(self, X_train: pd.DataFrame, y_train: pd.Series, X_valid: pd.DataFrame, y_valid: pd.Series):
             pass
-        
+
+        def __choose_best_regressor(self, X_train: pd.DataFrame, y_train: pd.Series, X_valid: pd.DataFrame, y_valid: pd.Series):
+            gs = GridSearchCV(
+                xgb.XGBRegressor(),
+                self.grids_params_xgboost,
+                scoring=self.score_func,
+                cv=2,
+                n_jobs=-1,
+                # TODO: **self.GridSearch_params
+            )
+
+
+            n_params = len(ParameterGrid(gs.param_grid)) * gs.get_params()['cv']
+            pbar = tqdm(total=n_params, desc="Parameter combinations")
+            
+            with self.tqdm_joblib(pbar):
+                gs.fit(X_train, y_train)
+            
+            best_model = gs.best_estimator_
+            val_score = self.score_func(y_valid, best_model.predict(X_valid))
+            
+            self.results.append({
+                'params': gs.best_params_,
+                'valid_score': val_score
+            })
+            return best_model
+
+        def __extend_data(self, X_train: pd.DataFrame, y_train: pd.Series, X_valid: pd.DataFrame, y_valid: pd.Series) -> tuple:
+            '''return -> (pd.DataFrame, pd.Series, pd.DataFrame, pd.Series)'''
+            pass
 
     class Finalize:
         def __init__(self, estimator):
