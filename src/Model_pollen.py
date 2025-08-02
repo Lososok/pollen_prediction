@@ -16,6 +16,7 @@ from sklearn.metrics import (
     mean_squared_error,
     mean_absolute_error,
     root_mean_squared_error,
+    make_scorer,
 )
 from sklearn.model_selection import (
     TimeSeriesSplit,
@@ -258,7 +259,6 @@ class Model_poll:
         self.Tools.draw_plot(self.y_test, preds)
         self.Tools.print_stats(self.y_test, preds)
        
-
 class Tools:
     def get_weater(name: str, start: str, end: str, 
             latitude: float=55.7558,
@@ -440,11 +440,11 @@ class PollenModel:
             """
             score_func - function object
             """
+            self.score_func = score_func
             self.grids_params_xgboost = grids_params_xgboost
             self.grids_params_catoost = grids_params_catoost
             self.tgdm = tgdm
             self.results = []
-            self.score_func = score_func
 
         @staticmethod
         @contextmanager
@@ -477,12 +477,11 @@ class PollenModel:
             gs = GridSearchCV(
                 xgb.XGBRegressor(),
                 self.grids_params_xgboost,
-                scoring=self.score_func,
+                scoring=make_scorer(self.score_func, greater_is_better=False),
                 cv=2,
                 n_jobs=-1,
                 # TODO: **self.GridSearch_params
             )
-
 
             n_params = len(ParameterGrid(gs.param_grid)) * gs.get_params()['cv']
             pbar = tqdm(total=n_params, desc="Parameter combinations")
@@ -508,10 +507,9 @@ class PollenModel:
             self.estimator = estimator
             self.metrics: pd.DataFrame = ...
 
-        def final_score(self, X_train, y_train, X_test, y_test):
+        def final_score(self, metric, X_test, y_test):
             y_pred = self.estimator.predict(X_test)
-            # TODO: get metrics
-            return y_pred
+            return metric(y_test, y_pred)
 
         def save_model(self, path):
             joblib.dump(self.estimator, path)
