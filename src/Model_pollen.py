@@ -434,13 +434,14 @@ class PollenModel:
 
     class ModelSelection:
         # TODO: write crosval selection
-        def __init__(self, score_func, grids_params_xgboost: dict,
+        def __init__(self, score_func, grid_search_params: dict, grids_params_xgboost: dict,
                      grids_params_catoost: dict|None=None,
                      tgdm: bool=False):
             """
             score_func - function object
             """
             self.score_func = score_func
+            self.grid_search_params = grid_search_params
             self.grids_params_xgboost = grids_params_xgboost
             self.grids_params_catoost = grids_params_catoost
             self.tgdm = tgdm
@@ -477,9 +478,10 @@ class PollenModel:
             gs = GridSearchCV(
                 xgb.XGBRegressor(),
                 self.grids_params_xgboost,
-                scoring=make_scorer(self.score_func, greater_is_better=False),
-                cv=2,
-                n_jobs=-1,
+                **self.grid_search_params
+                # scoring=make_scorer(self.score_func, greater_is_better=False),
+                # cv=2,
+                # n_jobs=-1,
                 # TODO: **self.GridSearch_params
             )
 
